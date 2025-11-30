@@ -482,9 +482,50 @@ grep "Deadlock detected" storage/logs/laravel.log
 
 ## Concurrency Strategy
 
-### Pessimistic Locking
-- `SELECT ... FOR UPDATE` on product and hold rows during hold creation
-- Prevents race conditions at stock boundary
+### How Locking Prevents Overselling
+
+**Problem:** 2 customers, 1 item, both click "Buy" simultaneously.
+
+**Without locking (BAD):**
+```
+Customer A: Check stock → 1 available ✓ → Create hold
+Customer B: Check stock → 1 available ✓ → Create hold
+Result: 2 holds for 1 item! 💥 OVERSOLD
+```
+
+**With locking (GOOD):**
+```
+TIME     CUSTOMER A                    CUSTOMER B
+─────────────────────────────────────────────────────────
+0ms      Get Redis lock ✅              Try lock → WAIT ⏳
+1ms      Check stock (1 available)      Waiting...
+2ms      Create hold                    Waiting...
+3ms      Commit + Release lock          Got lock! ✅
+4ms      ✅ SUCCESS                      Check stock (0 available)
+5ms                                     ❌ REJECTED
+─────────────────────────────────────────────────────────
+Result: Only 1 hold created ✓
+```
+
+**Key insight:** B can only check stock AFTER A commits. B sees A's hold → correctly rejected.
+
+### Two Layers of Protection
+
+| Layer | Purpose | Required? |
+|-------|---------|-----------|
+| **Redis Lock** | Coordinates across multiple servers | Optional (for scale) |
+| **MySQL `FOR UPDATE`** | Locks the row during transaction | **Essential** |
+
+```php
+// The essential pattern:
+DB::transaction(function () {
+    $product = Product::lockForUpdate()->find($id);  // Lock row
+    $available = $product->stock - $activeHolds;     // Check
+    if ($available >= $qty) {
+        Hold::create([...]);                          // Insert
+    }
+});  // COMMIT releases lock
+```
 
 ### Deadlock Handling
 - Automatic retry with exponential backoff (up to 3 retries)
