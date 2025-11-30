@@ -24,13 +24,9 @@ class FlashSaleTest extends TestCase
     {
         parent::setUp();
         
-        // Create a product with limited stock for testing
-        $this->product = Product::create([
-            'name' => 'Test Flash Sale Product',
-            'description' => 'Limited stock test product',
-            'price' => 99.99,
+        // Create a product with limited stock for testing using factory
+        $this->product = Product::factory()->create([
             'stock' => 10,
-            'version' => 1,
         ]);
     }
 
@@ -60,12 +56,10 @@ class FlashSaleTest extends TestCase
 
     public function test_get_product_shows_reduced_stock_with_active_holds(): void
     {
-        // Create a hold
-        Hold::create([
+        // Create a hold using factory
+        Hold::factory()->create([
             'product_id' => $this->product->id,
             'quantity' => 3,
-            'expires_at' => now()->addMinutes(2),
-            'status' => Hold::STATUS_ACTIVE,
         ]);
 
         // Clear cache to get fresh data
@@ -165,12 +159,9 @@ class FlashSaleTest extends TestCase
 
     public function test_parallel_holds_do_not_oversell(): void
     {
-        // Create a product with exactly 10 stock
-        $product = Product::create([
-            'name' => 'Parallel Test Product',
-            'price' => 50.00,
+        // Create a product with exactly 10 stock using factory
+        $product = Product::factory()->create([
             'stock' => 10,
-            'version' => 1,
         ]);
 
         $holdService = app(HoldService::class);
@@ -225,12 +216,10 @@ class FlashSaleTest extends TestCase
     {
         $holdService = app(HoldService::class);
 
-        // Create an expired hold manually
-        $expiredHold = Hold::create([
+        // Create an expired hold using factory
+        $expiredHold = Hold::factory()->expired()->create([
             'product_id' => $this->product->id,
             'quantity' => 5,
-            'expires_at' => now()->subMinutes(1),
-            'status' => Hold::STATUS_ACTIVE,
         ]);
 
         // Process expired holds
@@ -248,12 +237,10 @@ class FlashSaleTest extends TestCase
 
     public function test_expired_hold_cannot_create_order(): void
     {
-        // Create an expired hold
-        $hold = Hold::create([
+        // Create an expired hold using factory
+        $hold = Hold::factory()->expired()->create([
             'product_id' => $this->product->id,
             'quantity' => 2,
-            'expires_at' => now()->subMinutes(1),
-            'status' => Hold::STATUS_ACTIVE,
         ]);
 
         $response = $this->postJson('/api/orders', [
@@ -563,8 +550,8 @@ class FlashSaleTest extends TestCase
 
         $orderId = $orderResponse->json('order_id');
 
-        // Manually create a pending webhook (simulating out-of-order)
-        PaymentWebhook::create([
+        // Create a pending webhook using factory (simulating out-of-order)
+        PaymentWebhook::factory()->create([
             'idempotency_key' => 'pending-test-key',
             'order_id' => $orderId,
             'payment_status' => 'success',
